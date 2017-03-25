@@ -12,15 +12,15 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#include <string.h>
 
-#define N 100
 #define DEAD_CELL 0
 #define ALIVE_CELL 1
 
-void printCurrentState(int ** __state) {
+void printCurrentState(int ** __state, int N, int term) {
   system("clear");
   for(int i = 0; i < N;i++)
-    {
+  {
       for(int j = 0; j < N;j++) {
 	if(__state[i][j] == DEAD_CELL)
 	  printf(" ");
@@ -46,7 +46,7 @@ __device__ int MOVEMENTS[8][2] =
     {-1, 1}
   };
 
-__global__ void kernel_game_of_life(int * status, int * new_status) {
+__global__ void kernel_game_of_life(int * status, int * new_status, int N) {
   int i, j, neighbour_x, neighbour_y, neighbours_a, neighbours_d, neighbours_status, current_status;
 
   i = (threadIdx.x + blockIdx.x * blockDim.x) % N;
@@ -98,7 +98,26 @@ void vector2matrix(int * vector, int ** matrix, int size) {
     }
   }
 }
-int main(void)
+
+void read_status_matrix(int ** matrix, int N, char * input_file) {
+  int i, c;
+  FILE * fp;
+
+  fp = fopen(input_file, "r");
+
+  i = 0;
+  do {
+    c = fgetc (fp);
+    if (c != '\n' && c != EOF) {
+      matrix[i / N][i % N] = c - '0';
+      i++;
+    }
+  } while (c != EOF);
+
+  fclose(fp);
+}
+
+void generate_new_game(int N, int iterations, int term, char * input_file)
 {
   int i, j, minGridSize, blockSize, gridSize;
 
@@ -111,13 +130,17 @@ int main(void)
 
   srand(time(NULL));
 
-  for(i = 0; i < N;i++)
+  if(strlen(input_file) == 0) {
+    for(i = 0; i < N;i++)
     {
       for(j = 0; j < N;j++)
     	{
 	  __status_matrix[i][j] = rand() % 2;
     	}
     }
+  } else {
+    read_status_matrix(__status_matrix, N, input_file);
+  }
 
   __status_vector = matrix2vector(__status_matrix, N);
 
@@ -131,19 +154,22 @@ int main(void)
   cudaOccupancyMaxPotentialBlockSize(&minGridSize, &blockSize, kernel_game_of_life, 0, N*N);
   gridSize = (N*N + blockSize - 1) / blockSize;
 
-  printCurrentState(__status_matrix);
+  printCurrentState(__status_matrix, N, term);
 
-  while(true) {
-    kernel_game_of_life<<<gridSize, blockSize >>>(__status_dev_vector, __new_status_dev_vector);
+  for(i = 0; i < iterations;i++) {
+    kernel_game_of_life<<<gridSize, blockSize >>>(__status_dev_vector, __new_status_dev_vector, N);
     cudaDeviceSynchronize();
 
     cudaMemcpy(__status_vector, __new_status_dev_vector, N*N* sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(__status_dev_vector, __new_status_dev_vector, N*N* sizeof(int), cudaMemcpyDeviceToDevice);
 
     vector2matrix(__status_vector, __status_matrix, N);
-    printCurrentState(__status_matrix);
-    usleep(5000);
+    printCurrentState(__status_matrix, N, term);
+    sleep(1);
   }
 
-
+  cudaFree(__new_status_dev_vector);
+  cudaFree(__status_dev_vector);
+  free(__status_matrix);
+  free(__status_vector);
 }

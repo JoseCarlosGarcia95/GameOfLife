@@ -108,7 +108,7 @@ void read_status_matrix(int ** matrix, int N, char * input_file) {
   i = 0;
   do {
     c = fgetc (fp);
-    if (c != '\n' && c != EOF) {
+    if (c != '\n' && c != EOF && i < N*N) {
       matrix[i / N][i % N] = c - '0';
       i++;
     }
